@@ -65,7 +65,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                # 1. ZIPファイルを解凍する
+                # 1. ZIPファイルの中身を安全に解凍する
                 with zipfile.ZipFile(zip_path, 'r') as z:
                     for info in z.infolist():
                         try:
@@ -117,6 +117,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                     joined_data = gpd.sjoin(gdf_patients, gdf_hazard, how="inner", predicate="intersects")
 
                     if not joined_data.empty:
+                        # ▼▼▼ ここからがスペース（インデント）が重要な部分です ▼▼▼
                         if hazard_type == "flood":
                             # 洪水の浸水ランク列を探す
                             target_col = None
@@ -139,7 +140,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                                     all_matched_dfs.append(joined_data[['name', 'rank_code']])
                                     
                         elif hazard_type == "tsunami":
-                            # 津波の浸水ランク列を探す
+                            # 津波の浸水ランク列(A40_003等)を探す
                             target_col = None
                             for col_name in ['A40_003', 'A40_03', '浸水深', '浸水ランク']:
                                 if col_name in joined_data.columns:
@@ -160,6 +161,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                         elif hazard_type == "landslide":
                             # 土砂災害はそのまま抽出
                             all_matched_dfs.append(joined_data[['name']])
+                        # ▲▲▲ ここまで ▲▲▲
 
                     # 1ファイル処理するごとにメモリを強制解放
                     del gdf_hazard
@@ -195,7 +197,8 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                 }
                 final_df['浸水レベル'] = final_df['rank_numeric'].map(flood_map).fillna(final_df['rank_code'].astype(str))
                 
-           elif hazard_type == "tsunami":
+            elif hazard_type == "tsunami":
+                # 【修正済】最新の国交省基準（0.5m, 3.0m...）に翻訳
                 tsunami_map = {
                     1: "0.5m未満",
                     2: "0.5m～3.0m未満",
@@ -205,7 +208,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                     6: "20.0m以上"
                 }
                 final_df['浸水レベル'] = final_df['rank_numeric'].map(tsunami_map).fillna(final_df['rank_code'].astype(str))
-               
+            
             # 必要な列だけを残す
             final_df = final_df[['name', '浸水レベル']]
         else:
@@ -213,13 +216,12 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
             final_df = final_df[['name']]
 
         # --- 患者番号での並び替え（自然順） ---
-        # 可能な限り数値として解釈してソートする
         final_df['sort_key'] = pd.to_numeric(final_df['name'], errors='coerce')
         final_df = final_df.sort_values(by=['sort_key', 'name'])
         final_df = final_df.drop(columns=['sort_key'])
 
     return final_df
-
+    
 def to_excel_combined(df_tsunami, df_flood, df_landslide):
     """判定結果を1つのExcelファイルの別シートにまとめて出力する"""
     output = io.BytesIO()
