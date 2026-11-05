@@ -198,22 +198,8 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                 final_df['浸水レベル'] = final_df['rank_numeric'].map(flood_map).fillna(final_df['rank_code'].astype(str))
                 
             elif hazard_type == "tsunami":
-                # 【修正済】最新の国交省基準（0.5m, 3.0m...）に翻訳
-                tsunami_map = {
-                    1: "0.5m未満",
-                    2: "0.5m～3.0m未満",
-                    3: "3.0m～5.0m未満",
-                    4: "5.0m～10.0m未満",
-                    5: "10.0m～20.0m未満",
-                    6: "20.0m以上"
-                }
-                final_df['浸水レベル'] = final_df['rank_numeric'].map(tsunami_map).fillna(final_df['rank_code'].astype(str))
-            
-            # 必要な列だけを残す
-            final_df = final_df[['name', '浸水レベル']]
-        else:
-            final_df = final_df.drop_duplicates(subset=['name'])
-            final_df = final_df[['name']]
+                # 津波データはShapefileに書き込まれている情報をそのまま出力する
+                final_df['浸水レベル'] = final_df['rank_code'].astype(str)
 
         # --- 患者番号での並び替え（自然順） ---
         final_df['sort_key'] = pd.to_numeric(final_df['name'], errors='coerce')
