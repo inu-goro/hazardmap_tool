@@ -117,7 +117,6 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                     joined_data = gpd.sjoin(gdf_patients, gdf_hazard, how="inner", predicate="intersects")
 
                     if not joined_data.empty:
-                        # ▼▼▼ ここからがスペース（インデント）が重要な部分です ▼▼▼
                         if hazard_type == "flood":
                             # 洪水の浸水ランク列を探す
                             target_col = None
@@ -132,13 +131,22 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                                     target_col = fallback_cols[0]
 
                             if target_col:
+                                # 【修正】数値化できるもの（2以上）と、文字で書き込まれているものを両方救済する
                                 rank_numeric = pd.to_numeric(joined_data[target_col], errors='coerce')
-                                danger_codes = [2, 3, 4, 5, 6, 12, 13, 14, 15] 
-                                joined_data = joined_data[rank_numeric.isin(danger_codes)]
+                                
+                                mask_numeric = (rank_numeric >= 2) & (rank_numeric != 11)
+                                mask_text = rank_numeric.isna() & (joined_data[target_col].astype(str) != 'nan') & (joined_data[target_col].astype(str).str.strip() != '')
+                                
+                                joined_data = joined_data[mask_numeric | mask_text]
+                                
                                 if not joined_data.empty:
                                     joined_data['rank_code'] = joined_data[target_col]
                                     all_matched_dfs.append(joined_data[['name', 'rank_code']])
-                                    
+                            else:
+                                # 【修正】列が見つからない場合でも、浸水エリアに入っている人は救済して残す
+                                joined_data['rank_code'] = "ランク列不明（浸水エリア内）"
+                                all_matched_dfs.append(joined_data[['name', 'rank_code']])
+                                
                         elif hazard_type == "tsunami":
                             # 津波の浸水ランク列(A40_003等)を探す
                             target_col = None
@@ -161,7 +169,6 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                         elif hazard_type == "landslide":
                             # 土砂災害はそのまま抽出
                             all_matched_dfs.append(joined_data[['name']])
-                        # ▲▲▲ ここまで ▲▲▲
 
                     # 1ファイル処理するごとにメモリを強制解放
                     del gdf_hazard
@@ -200,6 +207,12 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
             elif hazard_type == "tsunami":
                 # 津波データはShapefileに書き込まれている情報をそのまま出力する
                 final_df['浸水レベル'] = final_df['rank_code'].astype(str)
+            
+            # 必要な列だけを残す
+            final_df = final_df[['name', '浸水レベル']]
+        else:
+            final_df = final_df.drop_duplicates(subset=['name'])
+            final_df = final_df[['name']]
 
         # --- 患者番号での並び替え（自然順） ---
         final_df['sort_key'] = pd.to_numeric(final_df['name'], errors='coerce')
