@@ -118,20 +118,42 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
 
                     if not joined_data.empty:
                         if hazard_type == "flood":
-                            # 洪水の浸水ランク列を探す
+                            # 洪水の浸水ランク列を探す（超・強化版）
                             target_col = None
-                            for col_name in ['A31_205', 'A31_105', 'A31_005', 'A31_05', '浸水ランク', '浸水ランクコード']:
+                            
+                            # ① ありがちな名前を幅広く探す
+                            possible_names = ['A31_205', 'A31_105', 'A31_005', 'A31_05', 'A31_004', '浸水ランク', '浸水ランクコード', 'RANK', 'rank', 'ランク', '浸水深', '水深']
+                            for col_name in possible_names:
                                 if col_name in joined_data.columns:
                                     target_col = col_name
                                     break
                             
+                            # ② 名前の一部に「rank」「深」「A31_」が含まれるものを探す
                             if not target_col:
-                                fallback_cols = [col for col in joined_data.columns if (col.startswith('A31_') and col.endswith('05')) or 'ランク' in col]
-                                if fallback_cols:
-                                    target_col = fallback_cols[0]
+                                for col in joined_data.columns:
+                                    if 'rank' in col.lower() or 'ランク' in col or '深' in col or (col.startswith('A31_') and col.endswith('5')):
+                                        target_col = col
+                                        break
+                                        
+                            # ③ 最終奥義：中身の「数字」を見て自動判定する
+                            if not target_col:
+                                for col in joined_data.columns:
+                                    if col not in ['geometry', 'name', 'index_right', 'description']:
+                                        try:
+                                            vals = pd.to_numeric(joined_data[col], errors='coerce').dropna().unique()
+                                            # 値が 1~6 や 11~15 の範囲に収まる列があれば、それをランク列とみなす
+                                            if len(vals) > 0 and all(v in [1,2,3,4,5,6,11,12,13,14,15] for v in vals):
+                                                target_col = col
+                                                break
+                                        except Exception:
+                                            pass
+                            
+                            # ④ どうしても見つからなかった場合、画面に列名を表示して手がかりを出す
+                            if not target_col:
+                                st.warning(f"⚠️ 洪水のランク列が見つかりません。実際の列名: {list(joined_data.columns)}")
 
                             if target_col:
-                                # 【修正】数値化できるもの（2以上）と、文字で書き込まれているものを両方救済する
+                                # 数値化できるもの（2以上）と、文字で書き込まれているものを両方救済する
                                 rank_numeric = pd.to_numeric(joined_data[target_col], errors='coerce')
                                 
                                 mask_numeric = (rank_numeric >= 2) & (rank_numeric != 11)
@@ -143,7 +165,7 @@ def process_multiple_hazard_maps(gdf_patients, zip_filepaths, hazard_type):
                                     joined_data['rank_code'] = joined_data[target_col]
                                     all_matched_dfs.append(joined_data[['name', 'rank_code']])
                             else:
-                                # 【修正】列が見つからない場合でも、浸水エリアに入っている人は救済して残す
+                                # 列が見つからない場合でも、浸水エリアに入っている人は救済して残す
                                 joined_data['rank_code'] = "ランク列不明（浸水エリア内）"
                                 all_matched_dfs.append(joined_data[['name', 'rank_code']])
                                 
